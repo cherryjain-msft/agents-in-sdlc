@@ -53,6 +53,15 @@
     });
 
     // Function to render stars based on rating
+    /**
+     * Renders a star rating display based on a numerical rating.
+     * 
+     * Converts a numerical rating (0-5) into a visual star representation using
+     * full stars (★), half stars (½), and empty stars (☆).
+     * 
+     * @param {number | null} rating - The numerical rating to render (0-5), or null if not rated
+     * @returns {string} A string representation of the rating using star symbols
+     */
     function renderStarRating(rating: number | null): string {
         if (rating === null) return "Not yet rated";
         
