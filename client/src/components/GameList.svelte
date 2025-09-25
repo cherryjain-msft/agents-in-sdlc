@@ -24,13 +24,32 @@
         game_count: number;
     }
 
+    interface PaginationData {
+        current_page: number;
+        total_pages: number;
+        total_items: number;
+        items_per_page: number;
+        has_next: boolean;
+        has_prev: boolean;
+    }
+
+    interface GameListResponse {
+        games: Game[];
+        pagination: PaginationData;
+    }
+
     export let games: Game[] = [];
+    let pagination: PaginationData | null = null;
     let loading = true;
     let error: string | null = null;
     let categories: Category[] = [];
     let publishers: Publisher[] = [];
     let selectedCategoryId: string = '';
     let selectedPublisherId: string = '';
+    
+    // Pagination state
+    let currentPage = 1;
+    let itemsPerPage = 20;
 
     const fetchCategories = async () => {
         try {
@@ -67,13 +86,19 @@
                 params.append('publisher_id', selectedPublisherId);
             }
             
+            // Add pagination parameters
+            params.append('page', currentPage.toString());
+            params.append('limit', itemsPerPage.toString());
+            
             if (params.toString()) {
                 url += '?' + params.toString();
             }
 
             const response = await fetch(url);
             if(response.ok) {
-                games = await response.json();
+                const data: GameListResponse = await response.json();
+                games = data.games;
+                pagination = data.pagination;
             } else {
                 error = `Failed to fetch data: ${response.status} ${response.statusText}`;
             }
@@ -87,15 +112,76 @@
     const clearFilters = () => {
         selectedCategoryId = '';
         selectedPublisherId = '';
+        currentPage = 1; // Reset to first page when clearing filters
         fetchGames();
+    };
+
+    // Pagination functions
+    const goToPage = (page: number) => {
+        if (page >= 1 && pagination && page <= pagination.total_pages) {
+            currentPage = page;
+            fetchGames();
+        }
+    };
+
+    const nextPage = () => {
+        if (pagination && pagination.has_next) {
+            currentPage++;
+            fetchGames();
+        }
+    };
+
+    const prevPage = () => {
+        if (pagination && pagination.has_prev) {
+            currentPage--;
+            fetchGames();
+        }
+    };
+
+    const changeItemsPerPage = (newLimit: number) => {
+        itemsPerPage = newLimit;
+        currentPage = 1; // Reset to first page when changing items per page
+        fetchGames();
+    };
+
+    // Generate array of page numbers for pagination display
+    const getVisiblePageNumbers = (): number[] => {
+        if (!pagination) return [];
+        
+        const totalPages = pagination.total_pages;
+        const current = pagination.current_page;
+        const delta = 2; // Number of pages to show on each side of current page
+        
+        let start = Math.max(1, current - delta);
+        let end = Math.min(totalPages, current + delta);
+        
+        // Adjust range if we're near the beginning or end
+        if (end - start + 1 < 2 * delta + 1) {
+            if (start === 1) {
+                end = Math.min(totalPages, start + 2 * delta);
+            } else if (end === totalPages) {
+                start = Math.max(1, end - 2 * delta);
+            }
+        }
+        
+        const pages: number[] = [];
+        for (let i = start; i <= end; i++) {
+            pages.push(i);
+        }
+        return pages;
     };
 
     // Reactive statement for active filters
     $: hasActiveFilters = selectedCategoryId !== '' || selectedPublisherId !== '';
 
-    // Watch for filter changes
+    // Watch for filter changes (but not pagination changes)
     $: if (selectedCategoryId !== undefined || selectedPublisherId !== undefined) {
-        fetchGames();
+        // Reset to first page when filters change
+        if (currentPage !== 1) {
+            currentPage = 1;
+        } else {
+            fetchGames();
+        }
     }
 
     onMount(() => {
@@ -111,6 +197,33 @@
         
         <!-- Filter Controls -->
         <div class="mb-6 bg-slate-800/60 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50">
+            <!-- Top row: Items per page selector and pagination info -->
+            <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-6">
+                <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                    <!-- Items per page selector -->
+                    <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                        <label for="items-per-page" class="text-sm font-medium text-slate-300 whitespace-nowrap">Items per page:</label>
+                        <select 
+                            id="items-per-page"
+                            bind:value={itemsPerPage}
+                            on:change={() => changeItemsPerPage(itemsPerPage)}
+                            class="bg-slate-700/60 border border-slate-600 text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 px-3 py-2"
+                        >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Pagination info -->
+                {#if pagination}
+                    <div class="text-sm text-slate-400">
+                        Showing {((pagination.current_page - 1) * pagination.items_per_page) + 1}-{Math.min(pagination.current_page * pagination.items_per_page, pagination.total_items)} of {pagination.total_items} games
+                    </div>
+                {/if}
+            </div>
+            
             <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                 <!-- Category Filter -->
                 <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
@@ -254,6 +367,89 @@
                     </div>
                 </a>
             {/each}
+        </div>
+    {/if}
+    
+    <!-- Pagination Controls -->
+    {#if pagination && pagination.total_pages > 1}
+        <div class="mt-8 flex flex-col sm:flex-row gap-4 items-center justify-center">
+            <!-- Previous Button -->
+            <button 
+                on:click={prevPage}
+                disabled={!pagination.has_prev}
+                class="px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 
+                       {pagination.has_prev 
+                         ? 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow-lg hover:shadow-blue-600/20' 
+                         : 'bg-slate-700 text-slate-400 cursor-not-allowed'}"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                Previous
+            </button>
+            
+            <!-- Page Numbers -->
+            <div class="flex flex-wrap gap-2 items-center">
+                {#if pagination.current_page > 3}
+                    <button 
+                        on:click={() => goToPage(1)}
+                        class="px-3 py-2 text-sm rounded-lg font-medium transition-all duration-200 
+                               bg-slate-700/60 hover:bg-slate-600 text-slate-300 hover:text-white"
+                    >
+                        1
+                    </button>
+                    {#if pagination.current_page > 4}
+                        <span class="text-slate-400">...</span>
+                    {/if}
+                {/if}
+                
+                {#each getVisiblePageNumbers() as pageNum}
+                    <button 
+                        on:click={() => goToPage(pageNum)}
+                        class="px-3 py-2 text-sm rounded-lg font-medium transition-all duration-200
+                               {pageNum === pagination.current_page
+                                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                                 : 'bg-slate-700/60 hover:bg-slate-600 text-slate-300 hover:text-white'}"
+                    >
+                        {pageNum}
+                    </button>
+                {/each}
+                
+                {#if pagination.current_page < pagination.total_pages - 2}
+                    {#if pagination.current_page < pagination.total_pages - 3}
+                        <span class="text-slate-400">...</span>
+                    {/if}
+                    <button 
+                        on:click={() => goToPage(pagination.total_pages)}
+                        class="px-3 py-2 text-sm rounded-lg font-medium transition-all duration-200 
+                               bg-slate-700/60 hover:bg-slate-600 text-slate-300 hover:text-white"
+                    >
+                        {pagination.total_pages}
+                    </button>
+                {/if}
+            </div>
+            
+            <!-- Next Button -->
+            <button 
+                on:click={nextPage}
+                disabled={!pagination.has_next}
+                class="px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 
+                       {pagination.has_next 
+                         ? 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow-lg hover:shadow-blue-600/20' 
+                         : 'bg-slate-700 text-slate-400 cursor-not-allowed'}"
+            >
+                Next
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Mobile-friendly pagination info -->
+        <div class="mt-4 text-center sm:hidden">
+            <div class="text-sm text-slate-400">
+                Page {pagination.current_page} of {pagination.total_pages}
+            </div>
         </div>
     {/if}
 </div>

@@ -1,7 +1,8 @@
 from flask import jsonify, Response, Blueprint, request
 from models import db, Game, Publisher, Category
 from sqlalchemy.orm import Query
-from typing import Optional
+from typing import Optional, Dict, Any
+import math
 
 # Create a Blueprint for games routes
 games_bp = Blueprint('games', __name__)
@@ -23,6 +24,16 @@ def get_games() -> Response:
     category_id: Optional[str] = request.args.get('category_id')
     publisher_id: Optional[str] = request.args.get('publisher_id')
     
+    # Get pagination parameters from query string
+    page: int = int(request.args.get('page', 1))
+    limit: int = int(request.args.get('limit', 20))
+    
+    # Validate pagination parameters
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:  # Max 100 items per page for performance
+        limit = 20
+    
     # Start with base query
     games_query = get_games_base_query()
     
@@ -33,13 +44,33 @@ def get_games() -> Response:
     if publisher_id and publisher_id.isdigit():
         games_query = games_query.filter(Game.publisher_id == int(publisher_id))
     
-    # Execute query
-    games_result = games_query.all()
+    # Get total count before applying pagination
+    total_items: int = games_query.count()
+    
+    # Calculate pagination metadata
+    total_pages: int = math.ceil(total_items / limit) if total_items > 0 else 1
+    offset: int = (page - 1) * limit
+    
+    # Apply pagination
+    games_result = games_query.offset(offset).limit(limit).all()
     
     # Convert the results using the model's to_dict method
     games_list = [game.to_dict() for game in games_result]
     
-    return jsonify(games_list)
+    # Create paginated response with metadata
+    response_data: Dict[str, Any] = {
+        'games': games_list,
+        'pagination': {
+            'current_page': page,
+            'total_pages': total_pages,
+            'total_items': total_items,
+            'items_per_page': limit,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        }
+    }
+    
+    return jsonify(response_data)
 
 @games_bp.route('/api/games/<int:id>', methods=['GET'])
 def get_game(id: int) -> tuple[Response, int] | Response:

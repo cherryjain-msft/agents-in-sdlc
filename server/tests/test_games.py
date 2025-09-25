@@ -30,6 +30,27 @@ class TestGamesRoutes(unittest.TestCase):
                 "publisher_index": 1,
                 "category_index": 1,
                 "star_rating": 4.2
+            },
+            {
+                "title": "Code Review Chaos",
+                "description": "Manage pull requests and code reviews efficiently",
+                "publisher_index": 0,
+                "category_index": 0,
+                "star_rating": 4.0
+            },
+            {
+                "title": "Sprint Planning Supreme",
+                "description": "Plan your sprints like a pro scrum master",
+                "publisher_index": 1,
+                "category_index": 1,
+                "star_rating": 4.8
+            },
+            {
+                "title": "Deployment Derby",
+                "description": "Race to deploy your applications successfully",
+                "publisher_index": 0,
+                "category_index": 0,
+                "star_rating": 4.3
             }
         ]
     }
@@ -104,17 +125,26 @@ class TestGamesRoutes(unittest.TestCase):
         return json.loads(response.data)
 
     def test_get_games_success(self) -> None:
-        """Test successful retrieval of multiple games"""
+        """Test successful retrieval of multiple games with pagination"""
         # Act
         response = self.client.get(self.GAMES_API_PATH)
         data = self._get_response_data(response)
         
         # Assert
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(data), len(self.TEST_DATA["games"]))
+        self.assertIn('games', data)
+        self.assertIn('pagination', data)
+        self.assertEqual(len(data['games']), len(self.TEST_DATA["games"]))
+        
+        # Verify pagination metadata
+        pagination = data['pagination']
+        self.assertEqual(pagination['current_page'], 1)
+        self.assertEqual(pagination['total_items'], len(self.TEST_DATA["games"]))
+        self.assertEqual(pagination['items_per_page'], 20)
+        self.assertFalse(pagination['has_prev'])
         
         # Verify all games using loop instead of manual testing
-        for i, game_data in enumerate(data):
+        for i, game_data in enumerate(data['games']):
             test_game = self.TEST_DATA["games"][i]
             test_publisher = self.TEST_DATA["publishers"][test_game["publisher_index"]]
             test_category = self.TEST_DATA["categories"][test_game["category_index"]]
@@ -125,25 +155,35 @@ class TestGamesRoutes(unittest.TestCase):
             self.assertEqual(game_data['starRating'], test_game["star_rating"])
 
     def test_get_games_structure(self) -> None:
-        """Test the response structure for games"""
+        """Test the response structure for games with pagination"""
         # Act
         response = self.client.get(self.GAMES_API_PATH)
         data = self._get_response_data(response)
         
         # Assert
         self.assertEqual(response.status_code, 200)
-        self.assertIsInstance(data, list)
-        self.assertEqual(len(data), len(self.TEST_DATA["games"]))
+        self.assertIn('games', data)
+        self.assertIn('pagination', data)
+        self.assertIsInstance(data['games'], list)
+        self.assertEqual(len(data['games']), len(self.TEST_DATA["games"]))
         
-        required_fields = ['id', 'title', 'description', 'publisher', 'category', 'starRating']
-        for field in required_fields:
-            self.assertIn(field, data[0])
+        # Test pagination structure
+        pagination = data['pagination']
+        required_pagination_fields = ['current_page', 'total_pages', 'total_items', 'items_per_page', 'has_next', 'has_prev']
+        for field in required_pagination_fields:
+            self.assertIn(field, pagination)
+        
+        # Test game structure
+        required_game_fields = ['id', 'title', 'description', 'publisher', 'category', 'starRating']
+        for field in required_game_fields:
+            self.assertIn(field, data['games'][0])
 
     def test_get_game_by_id_success(self) -> None:
         """Test successful retrieval of a single game by ID"""
         # Get the first game's ID from the list endpoint
         response = self.client.get(self.GAMES_API_PATH)
-        games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        games = data['games']
         game_id = games[0]['id']
         
         # Act
@@ -172,14 +212,16 @@ class TestGamesRoutes(unittest.TestCase):
         """Test filtering games by category"""
         # First get all games to find category IDs
         response = self.client.get(self.GAMES_API_PATH)
-        all_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        all_games = data['games']
         
         # Get the first game's category ID
         category_id = all_games[0]['category']['id']
         
         # Act - filter by category
         response = self.client.get(f'{self.GAMES_API_PATH}?category_id={category_id}')
-        filtered_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        filtered_games = data['games']
         
         # Assert
         self.assertEqual(response.status_code, 200)
@@ -192,14 +234,16 @@ class TestGamesRoutes(unittest.TestCase):
         """Test filtering games by publisher"""
         # First get all games to find publisher IDs
         response = self.client.get(self.GAMES_API_PATH)
-        all_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        all_games = data['games']
         
         # Get the first game's publisher ID
         publisher_id = all_games[0]['publisher']['id']
         
         # Act - filter by publisher
         response = self.client.get(f'{self.GAMES_API_PATH}?publisher_id={publisher_id}')
-        filtered_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        filtered_games = data['games']
         
         # Assert
         self.assertEqual(response.status_code, 200)
@@ -212,7 +256,8 @@ class TestGamesRoutes(unittest.TestCase):
         """Test filtering games by both category and publisher"""
         # First get all games to find IDs
         response = self.client.get(self.GAMES_API_PATH)
-        all_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        all_games = data['games']
         
         # Get the first game's category and publisher IDs
         category_id = all_games[0]['category']['id']
@@ -220,7 +265,8 @@ class TestGamesRoutes(unittest.TestCase):
         
         # Act - filter by both
         response = self.client.get(f'{self.GAMES_API_PATH}?category_id={category_id}&publisher_id={publisher_id}')
-        filtered_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        filtered_games = data['games']
         
         # Assert
         self.assertEqual(response.status_code, 200)
@@ -234,7 +280,8 @@ class TestGamesRoutes(unittest.TestCase):
         """Test filtering games with no matching results"""
         # Act - filter by non-existent category ID
         response = self.client.get(f'{self.GAMES_API_PATH}?category_id=999')
-        filtered_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        filtered_games = data['games']
         
         # Assert
         self.assertEqual(response.status_code, 200)
@@ -244,11 +291,109 @@ class TestGamesRoutes(unittest.TestCase):
         """Test filtering games with invalid parameters"""
         # Act - filter by invalid category ID (non-numeric)
         response = self.client.get(f'{self.GAMES_API_PATH}?category_id=invalid')
-        filtered_games = self._get_response_data(response)
+        data = self._get_response_data(response)
+        filtered_games = data['games']
         
         # Assert - should return all games when invalid parameter is provided
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(filtered_games), len(self.TEST_DATA["games"]))
+
+    def test_pagination_default_values(self) -> None:
+        """Test pagination with default values"""
+        # Act
+        response = self.client.get(self.GAMES_API_PATH)
+        data = self._get_response_data(response)
+        
+        # Assert
+        self.assertEqual(response.status_code, 200)
+        pagination = data['pagination']
+        self.assertEqual(pagination['current_page'], 1)
+        self.assertEqual(pagination['items_per_page'], 20)
+        self.assertFalse(pagination['has_prev'])
+
+    def test_pagination_with_page_parameter(self) -> None:
+        """Test pagination with specific page parameter"""
+        # Act - request page 2 with limit of 2 items per page
+        response = self.client.get(f'{self.GAMES_API_PATH}?page=2&limit=2')
+        data = self._get_response_data(response)
+        
+        # Assert
+        self.assertEqual(response.status_code, 200)
+        pagination = data['pagination']
+        self.assertEqual(pagination['current_page'], 2)
+        self.assertEqual(pagination['items_per_page'], 2)
+        self.assertTrue(pagination['has_prev'])
+        self.assertEqual(len(data['games']), 2)
+
+    def test_pagination_with_limit_parameter(self) -> None:
+        """Test pagination with specific limit parameter"""
+        # Act - request first page with limit of 3 items per page
+        response = self.client.get(f'{self.GAMES_API_PATH}?limit=3')
+        data = self._get_response_data(response)
+        
+        # Assert
+        self.assertEqual(response.status_code, 200)
+        pagination = data['pagination']
+        self.assertEqual(pagination['current_page'], 1)
+        self.assertEqual(pagination['items_per_page'], 3)
+        self.assertEqual(len(data['games']), 3)
+        self.assertEqual(pagination['total_items'], len(self.TEST_DATA["games"]))
+
+    def test_pagination_invalid_page_parameter(self) -> None:
+        """Test pagination with invalid page parameter"""
+        # Act - request page 0 (invalid)
+        response = self.client.get(f'{self.GAMES_API_PATH}?page=0')
+        data = self._get_response_data(response)
+        
+        # Assert - should default to page 1
+        self.assertEqual(response.status_code, 200)
+        pagination = data['pagination']
+        self.assertEqual(pagination['current_page'], 1)
+
+    def test_pagination_invalid_limit_parameter(self) -> None:
+        """Test pagination with invalid limit parameter"""
+        # Act - request limit over 100 (invalid)
+        response = self.client.get(f'{self.GAMES_API_PATH}?limit=200')
+        data = self._get_response_data(response)
+        
+        # Assert - should default to limit 20
+        self.assertEqual(response.status_code, 200)
+        pagination = data['pagination']
+        self.assertEqual(pagination['items_per_page'], 20)
+
+    def test_pagination_with_filters(self) -> None:
+        """Test pagination works with filtering"""
+        # First get all games to find category ID
+        response = self.client.get(self.GAMES_API_PATH)
+        data = self._get_response_data(response)
+        all_games = data['games']
+        category_id = all_games[0]['category']['id']
+        
+        # Act - filter by category with pagination
+        response = self.client.get(f'{self.GAMES_API_PATH}?category_id={category_id}&page=1&limit=2')
+        data = self._get_response_data(response)
+        
+        # Assert
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('games', data)
+        self.assertIn('pagination', data)
+        # All returned games should have the same category ID
+        for game in data['games']:
+            self.assertEqual(game['category']['id'], category_id)
+
+    def test_pagination_beyond_available_pages(self) -> None:
+        """Test requesting a page beyond available data"""
+        # Act - request page 10 (beyond available data)
+        response = self.client.get(f'{self.GAMES_API_PATH}?page=10&limit=2')
+        data = self._get_response_data(response)
+        
+        # Assert - should return empty games list but valid pagination metadata
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(data['games']), 0)
+        pagination = data['pagination']
+        self.assertEqual(pagination['current_page'], 10)
+        self.assertTrue(pagination['has_prev'])
+        self.assertFalse(pagination['has_next'])
 
 if __name__ == '__main__':
     unittest.main()
